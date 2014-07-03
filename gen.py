@@ -6,6 +6,8 @@
 # For more information, please refer to <http://unlicense.org/>
 
 import os
+import json
+import imp
 
 def find_asset_files(asset_dir, asset_filename = "asset.json"):
     """Return a list of relative paths to all asset json files.
@@ -39,4 +41,20 @@ if __name__ == '__main__':
     os.chdir(root_dir)
 
     for asset in find_asset_files('assets/'):
-        print('Found ' + asset);
+        # Extract the action:
+        action = json.load(open(asset))
+        type_name = action['type']
+        module_tuple = imp.find_module(type_name, ['gen/'])
+        action_module = imp.load_module(type_name, module_tuple[0],
+                                                   module_tuple[1],
+                                                   module_tuple[2])
+        # Change our directory to the root of the given asset.json file.
+        os.chdir(os.path.join(root_dir, os.path.dirname(asset)))
+        try:
+            action_module.run(action)
+        except AttributeError:
+            # Welp, bad plugin.
+            print('Ignoring: ' + asset + ' because ' + module_tuple[0].name +
+                  ' doesn\'t have a run function.')
+        # Go back to root.
+        os.chdir(root_dir)
