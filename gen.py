@@ -38,6 +38,7 @@ if __name__ == '__main__':
     # Move into the directory of the script, assumed to be the root of the
     # project we are dealing with.
     root_dir = os.path.abspath(os.path.dirname(__file__))
+    dist_relative_dir = 'dist/'
     os.chdir(root_dir)
 
     for asset in find_asset_files('assets/'):
@@ -48,13 +49,19 @@ if __name__ == '__main__':
         action_module = imp.load_module(type_name, module_tuple[0],
                                                    module_tuple[1],
                                                    module_tuple[2])
-        # Change our directory to the root of the given asset.json file.
-        os.chdir(os.path.join(root_dir, os.path.dirname(asset)))
+
         try:
-            action_module.run(action)
+            action_module.run(action,
+                              os.path.dirname(asset),
+                              os.path.join(dist_relative_dir,
+                                           os.path.dirname(asset)))
         except AttributeError:
             # Welp, bad plugin.
             print('Ignoring: ' + asset + ' because ' + module_tuple[0].name +
                   ' doesn\'t have a run function.')
-        # Go back to root.
-        os.chdir(root_dir)
+            continue
+
+        # Remove the asset file in the distribution folder.
+        dist_asset = os.path.join(dist_relative_dir, asset)
+        print('Removing ' + dist_asset)
+        os.remove(dist_asset)
