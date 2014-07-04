@@ -10,6 +10,18 @@ import sys
 import json
 import imp
 
+def recursive_contents(root, **args):
+    """Loop through every file in the specified directory recursively."""
+    for dirname, dirs, files in os.walk(root, **args):
+        for filename in files:
+            yield os.path.relpath(os.path.join(dirname, filename), root)
+
+def recursive_directories(root, **args):
+    """Loop through every directory in the specified directory recursively."""
+    for cd, dirs, files in os.walk(root, **args):
+        for dirname in dirs:
+            yield os.path.relpath(os.path.join(cd, dirname), root)
+
 if __name__ == '__main__':
     # Enter the directory of this script assumed to be the project root.
     root = os.path.abspath(os.path.dirname(__file__))
@@ -38,3 +50,10 @@ if __name__ == '__main__':
         this_dist = os.path.join(dist, asset.get('dist', asset['root']))
         # Run the action
         action.run(asset, asset['root'], this_dist)
+
+    # Remove all empty directories in dist.
+    for directory in recursive_directories(dist, topdown=False):
+        directory = os.path.join(dist, directory)
+        if len(os.listdir(directory)) == 0:
+            print('Removed empty directory: ' + directory)
+            os.rmdir(directory)
