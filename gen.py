@@ -6,6 +6,7 @@
 # For more information, please refer to <http://unlicense.org/>
 
 import os
+import sys
 import json
 import imp
 
@@ -13,6 +14,9 @@ if __name__ == '__main__':
     # Enter the directory of this script assumed to be the project root.
     root = os.path.abspath(os.path.dirname(__file__))
     os.chdir(root)
+
+    # Make sure the type extensions can import gen.py.
+    sys.path.append(root)
 
     # Figure out some other useful paths
     dist = os.path.join(root, 'dist')
