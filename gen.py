@@ -13,7 +13,7 @@ def find_asset_files(asset_dir, asset_filename = "asset.json"):
     """Return a list of relative paths to all asset json files.
 
     Keyword Arguments:
-    asset_dir -- A relative path to the assets directory to be searched.
+    asset_dir -- root directory to be searched.
     """
 
     # If we aren't even given a directory, bail.
@@ -35,33 +35,34 @@ def find_asset_files(asset_dir, asset_filename = "asset.json"):
     return files
 
 if __name__ == '__main__':
-    # Move into the directory of the script, assumed to be the root of the
-    # project we are dealing with.
-    root_dir = os.path.abspath(os.path.dirname(__file__))
-    dist_relative_dir = 'dist/'
-    os.chdir(root_dir)
+    # Root is absolute, as are the rest.
+    root = os.path.abspath(os.path.dirname(__file__))
+    assets = os.path.join(root, 'assets')
+    dist = os.path.join(root, 'dist')
+    types = os.path.join(root, 'types')
 
-    for asset in find_asset_files('assets/'):
-        # Extract the action:
-        action = json.load(open(asset))
-        type_name = action['type']
-        module_tuple = imp.find_module(type_name, ['gen/'])
-        action_module = imp.load_module(type_name, module_tuple[0],
-                                                   module_tuple[1],
-                                                   module_tuple[2])
+    os.chdir(root)
 
-        try:
-            action_module.run(action,
-                              os.path.dirname(asset),
-                              os.path.join(dist_relative_dir,
-                                           os.path.dirname(asset)))
-        except AttributeError:
-            # Welp, bad plugin.
-            print('Ignoring: ' + asset + ' because ' + module_tuple[0].name +
-                  ' doesn\'t have a run function.')
-            continue
+    for asset_json in find_asset_files(os.path.relpath(assets)):
 
-        # Remove the asset file in the distribution folder.
-        dist_asset = os.path.join(dist_relative_dir, asset)
-        print('Removing ' + dist_asset)
-        os.remove(dist_asset)
+        # Extract the action object!
+        action = json.load(open(asset_json))
+
+        # Get the relative path to the asset folder containing the asset.json.
+        this_asset = os.path.dirname(asset_json)
+
+        # Figure out the distribution directory for this asset. The default is
+        # to use the name of the folder containing the asset.json file.
+        # However, if output_dir is specified in the action object, that is
+        # preferred.
+        this_dist = os.path.join(dist, os.path.relpath(this_asset, assets))
+        if 'output_dir' in action:
+            this_dist = os.path.join(dist, action['output_dir'])
+
+        # Extract the python module to load:
+        module_tuple = imp.find_module(action['type'], [types])
+        action_module = imp.load_module(action['type'], module_tuple[0],
+                                                        module_tuple[1],
+                                                        module_tuple[2])
+
+        action_module.run(action, this_asset, this_dist)
