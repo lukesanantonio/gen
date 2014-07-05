@@ -8,6 +8,7 @@
 import os
 import shutil
 import json
+import jinja2
 
 def get_input_output_file(asset_root, dist_root, f):
     return os.path.join(asset_root, f), os.path.join(dist_root, f)
@@ -35,6 +36,13 @@ class Environment:
         else:
             # Notify the environment we are skipping this file.
             self._notify_skip(output_file)
+
+    def file_from_content(self, input_file, content, output_file):
+        os.makedirs(os.path.dirname(output_file), exist_ok=True)
+        with open(output_file, "w") as f:
+            f.write(content)
+        self._notify_transform(input_file, output_file)
+
 
 class BaseContentProvider:
     def __init__(self, asset_root, dist_root, env):
@@ -75,6 +83,40 @@ class StaticContentProvider(BaseContentProvider):
         self.env.copy_if_newer(input_file, output_file)
         return output_file
 
+class Jinja2ContentProvider(BaseContentProvider):
+    def __init__(self, asset_root, dist_root, env):
+        BaseContentProvider.__init__(self, asset_root, dist_root, env)
+        self._jinja2env = (
+               jinja2.Environment(loader=jinja2.FileSystemLoader(asset_root)))
+
+    def add_input(self, input_obj):
+        # Here we expect an object with a filename and parameters.
+        if not isinstance(input_obj, dict):
+            raise WrongSourceType
+
+        # Do some basic validation, then just add it to our list. As long as
+        # we should be fine.
+        if 'filename' in input_obj:
+            self._sources.append(input_obj)
+        else:
+            raise WrongSourceType("Filename required in source object!")
+
+    def _install(self, source):
+        # Remember, our filename is relative to the asset root.
+        filename = source['filename']
+        template = self._jinja2env.get_template(filename)
+
+        parameters = source.get('parameters')
+        if 'parameters' in source:
+            rendered_template = template.render(source['parameters'])
+        else:
+            rendered_template = template.render()
+
+        input_file, output_file = get_input_output_file(self.asset_root,
+                                                        self.dist_root,
+                                                        filename)
+        self.env.file_from_content(input_file, rendered_template, output_file)
+
 if __name__ == '__main__':
     # Enter the directory of this script assumed to be the project root.
     root = os.path.abspath(os.path.dirname(__file__))
@@ -83,7 +125,8 @@ if __name__ == '__main__':
     # Figure out some other useful paths
     dist_root = os.path.join(root, 'dist')
 
-    builtins = {'static': StaticContentProvider}
+    builtins = {'static': StaticContentProvider,
+                'jinja2': Jinja2ContentProvider}
 
     # Parse the assets.json file.
     assets_json = json.load(open('assets.json'))
