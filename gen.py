@@ -8,7 +8,9 @@
 import os
 import shutil
 import json
+import subprocess
 import jinja2
+import sys
 
 def get_input_output_file(asset_root, dist_root, f):
     return os.path.join(asset_root, f), os.path.join(dist_root, f)
@@ -29,6 +31,12 @@ class Environment:
     def _notify_skip(self, out_file):
         print('Skipping ' + os.path.relpath(out_file))
 
+    def _notify_command(self, args):
+        sys.stdout.write('Running:')
+        for part in args:
+            sys.stdout.write(' ' + part)
+        sys.stdout.write('\n')
+
     def copy_if_newer(self, input_file, output_file):
         if (not os.path.exists(output_file) or
             os.path.getmtime(input_file) > os.path.getmtime(output_file)):
@@ -48,6 +56,15 @@ class Environment:
             f.write(content)
         self._notify_transform(input_file, output_file)
 
+    def subprocess_transform(self, prg, options, input_file, output_file):
+        args = [prg, input_file, output_file]
+        args[1:1] = options
+
+        os.makedirs(os.path.dirname(output_file), exist_ok=True)
+
+        self._notify_command(args)
+        if subprocess.call(args):
+            self._notify_transform(input_file, output_file)
 
 class BaseContentProvider:
     def __init__(self, asset_root, dist_root, type_options, env):
