@@ -140,6 +140,7 @@ class Jinja2ContentProvider(BaseContentProvider):
                                                         self.dist_root,
                                                         filename)
         self.env.file_from_content(input_file, rendered_template, output_file)
+        return output_file
 
 if __name__ == '__main__':
     # Enter the directory of this script assumed to be the project root.
