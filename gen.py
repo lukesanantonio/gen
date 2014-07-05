@@ -6,54 +6,106 @@
 # For more information, please refer to <http://unlicense.org/>
 
 import os
-import sys
+import shutil
 import json
-import imp
 
-def recursive_contents(root, **args):
-    """Loop through every file in the specified directory recursively."""
-    for dirname, dirs, files in os.walk(root, **args):
-        for filename in files:
-            yield os.path.relpath(os.path.join(dirname, filename), root)
+def get_input_output_file(asset_root, dist_root, f):
+    return os.path.join(asset_root, f), os.path.join(dist_root, f)
 
-def recursive_directories(root, **args):
-    """Loop through every directory in the specified directory recursively."""
-    for cd, dirs, files in os.walk(root, **args):
-        for dirname in dirs:
-            yield os.path.relpath(os.path.join(cd, dirname), root)
+class WrongSourceType(Exception):
+    pass
+
+class Environment:
+    def notify_copy(self, input_file, output_file):
+        print(os.path.relpath(input_file) + ' => ' +
+              os.path.relpath(output_file))
+
+    def notify_skip(self, out_file):
+        print('Skipping ' + os.path.relpath(out_file))
+
+    def copy_if_newer(self, input_file, output_file):
+        if (not os.path.exists(output_file) or
+            os.path.getmtime(input_file) > os.path.getmtime(output_file)):
+            # Make sure the destination directory exists.
+            os.makedirs(os.path.dirname(output_file), exist_ok=True)
+            # Copy the file
+            shutil.copy(input_file, output_file)
+            # Notify the environment
+            self.notify_copy(input_file, output_file)
+        else:
+            # Notify the environment we are skipping this file.
+            self.notify_skip(output_file)
+
+class BaseContentProvider:
+    def __init__(self, asset_root, dist_root, env):
+        # Don't rely on the cwd directory staying as it throughout the
+        # lifetime of the object. That is, make absolute paths now.
+        self.asset_root = os.path.abspath(asset_root)
+        self.dist_root = os.path.abspath(dist_root)
+        self.env = env
+        self._sources = []
+
+    def install_content(self):
+        """Install all files necessary and return a list of those files."""
+        out_files = []
+        for source in self._sources:
+            out_files.append(self._install(source))
+        return out_files
+
+class StaticContentProvider(BaseContentProvider):
+    def add_input(self, input_obj):
+        # We just expect a string here.
+        if not isinstance(input_obj, str):
+            raise WrongSourceType
+
+        # If we are given a directory, use all the files in that directory.
+        input_abspath = os.path.join(self.asset_root, input_obj)
+        if os.path.isdir(input_abspath):
+            for child in os.listdir(input_abspath):
+                self.add_input(os.path.join(input_abspath, child))
+        # Otherwise it's just a file, easy.
+        else:
+            self._sources.append(input_abspath)
+
+    def _install(self, source):
+        source_rel = os.path.relpath(source, self.asset_root)
+        input_file, output_file = get_input_output_file(self.asset_root,
+                                                        self.dist_root,
+                                                        source_rel)
+        self.env.copy_if_newer(input_file, output_file)
+        return output_file
 
 if __name__ == '__main__':
     # Enter the directory of this script assumed to be the project root.
     root = os.path.abspath(os.path.dirname(__file__))
     os.chdir(root)
 
-    # Make sure the type extensions can import gen.py.
-    sys.path.append(root)
-
     # Figure out some other useful paths
-    dist = os.path.join(root, 'dist')
+    dist_root = os.path.join(root, 'dist')
+
+    builtins = {'static': StaticContentProvider}
 
     # Parse the assets.json file.
     assets_json = json.load(open('assets.json'))
 
-    # For each asset
+    output = []
     for asset in assets_json:
-        # Load our extension
-        try:
-            module = imp.find_module(asset['type'], ['types/'])
-            action = imp.load_module(asset['type'], module[0],
-                                     module[1], module[2])
-        except ImportError as i:
-            print("Invalid or unknown type: '" + asset['type'] + "'")
-            continue
-        # Find the dist path
-        this_dist = os.path.join(dist, asset.get('dist', asset['root']))
-        # Run the action
-        action.run(asset, asset['root'], this_dist)
+        # Find the asset-specific dist path.
+        asset_dist = os.path.join(dist_root, asset.get('dist', asset['root']))
 
-    # Remove all empty directories in dist.
-    for directory in recursive_directories(dist, topdown=False):
-        directory = os.path.join(dist, directory)
-        if len(os.listdir(directory)) == 0:
-            print('Removed empty directory: ' + directory)
-            os.rmdir(directory)
+        # Check our built-in list of supported types.
+        if asset['type'] in builtins.keys():
+            env = Environment()
+            provider = builtins[asset['type']](asset['root'], asset_dist, env)
+        else:
+            print('No plugin available to handle ' + asset['type'] +
+                  ' assets.')
+            continue
+
+        # Tell the provider about it's input.
+        for i in asset['input']:
+            provider.add_input(i)
+        # Install everything.
+        output.extend(provider.install_content())
+
+    # TODO Remove all files not required to be there.
