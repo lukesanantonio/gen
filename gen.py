@@ -65,7 +65,7 @@ class StaticContentProvider(BaseContentProvider):
                 self.add_input(os.path.join(input_abspath, child))
         # Otherwise it's just a file, easy.
         else:
-            self._sources.append(input_abspath)
+            self._sources.append(os.path.normpath(input_abspath))
 
     def _install(self, source):
         source_rel = os.path.relpath(source, self.asset_root)
