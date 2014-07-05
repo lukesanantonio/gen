@@ -161,41 +161,47 @@ class ScssContentProvider(StaticContentProvider):
                                       input_file, output_file)
         return output_file
 
+builtins = {'static': StaticContentProvider,
+            'jinja2': Jinja2ContentProvider,
+            'scss'  : ScssContentProvider}
+
+def find_relevant_builtin(asset):
+    if asset['type'] in builtins.keys():
+        return builtins[asset['type']]
+    else:
+        return None
+
 if __name__ == '__main__':
-    # Enter the directory of this script assumed to be the project root.
-    root = os.path.abspath(os.path.dirname(__file__))
-    os.chdir(root)
-
-    # Figure out some other useful paths
-    dist_root = os.path.join(root, 'dist')
-
-    builtins = {'static': StaticContentProvider,
-                'jinja2': Jinja2ContentProvider,
-                'scss': ScssContentProvider}
+    env = Environment(os.getcwd(), os.path.abspath('dist/'))
 
     # Parse the assets.json file.
-    assets_json = json.load(open('assets.json'))
+    try:
+        assets_json = json.load(open('assets.json'))
+    except:
+        sys.exit('Failed to open the assets.json file!\n' +
+                 'Make sure you are running gen from the correct ' +
+                 'directory.\n')
 
     output = []
     for asset in assets_json:
-        # Find the asset-specific dist path.
-        asset_dist = os.path.join(dist_root, asset.get('dist', asset['root']))
+        # Find the asset-specific dist dir.
+        asset_dist = os.path.join(env.dist_root,
+                                  asset.get('dist', asset['root']))
 
         # Check our built-in list of supported types.
+        provider_class = find_relevant_builtin(asset)
         if asset['type'] in builtins.keys():
-            env = Environment(root, dist_root)
-            provider = builtins[asset['type']](asset['root'], asset_dist,
-                                               asset.get('type_options', {}),
-                                               env)
+            provider = provider_class(asset['root'], asset_dist,
+                                      asset.get('type_options', {}), env)
         else:
-            print('No plugin available to handle ' + asset['type'] +
-                  ' assets.')
+            sys.stderr.write('No plugin available to handle ' +
+                             asset['type'] + ' assets.')
             continue
 
         # Tell the provider about it's input.
         for i in asset['input']:
             provider.add_input(i)
-        # Install everything.
+        # Install everything while recording what files were produced.
         output.extend(provider.install_content())
 
     # TODO Remove all files not required to be there.
