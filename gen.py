@@ -17,6 +17,11 @@ class WrongSourceType(Exception):
     pass
 
 class Environment:
+    def __init__(self, root, dist_root):
+        """Initialize the root and the dist root with given values."""
+        self.root = root
+        self.dist_root = dist_root
+
     def _notify_transform(self, input_file, output_file):
         print(os.path.relpath(input_file) + ' => ' +
               os.path.relpath(output_file))
@@ -138,7 +143,7 @@ if __name__ == '__main__':
 
         # Check our built-in list of supported types.
         if asset['type'] in builtins.keys():
-            env = Environment()
+            env = Environment(root, dist_root)
             provider = builtins[asset['type']](asset['root'], asset_dist, env)
         else:
             print('No plugin available to handle ' + asset['type'] +
