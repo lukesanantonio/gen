@@ -50,11 +50,12 @@ class Environment:
 
 
 class BaseContentProvider:
-    def __init__(self, asset_root, dist_root, env):
+    def __init__(self, asset_root, dist_root, type_options, env):
         # Don't rely on the cwd directory staying as it throughout the
         # lifetime of the object. That is, make absolute paths now.
         self.asset_root = os.path.abspath(asset_root)
         self.dist_root = os.path.abspath(dist_root)
+        self.options = type_options
         self.env = env
         self._sources = []
 
@@ -89,8 +90,9 @@ class StaticContentProvider(BaseContentProvider):
         return output_file
 
 class Jinja2ContentProvider(BaseContentProvider):
-    def __init__(self, asset_root, dist_root, env):
-        BaseContentProvider.__init__(self, asset_root, dist_root, env)
+    def __init__(self, asset_root, dist_root, type_options, env):
+        BaseContentProvider.__init__(self, asset_root, dist_root,
+                                     type_options, env)
         self._jinja2env = (
                jinja2.Environment(loader=jinja2.FileSystemLoader(asset_root)))
 
@@ -144,7 +146,9 @@ if __name__ == '__main__':
         # Check our built-in list of supported types.
         if asset['type'] in builtins.keys():
             env = Environment(root, dist_root)
-            provider = builtins[asset['type']](asset['root'], asset_dist, env)
+            provider = builtins[asset['type']](asset['root'], asset_dist,
+                                               asset.get('type_options', {}),
+                                               env)
         else:
             print('No plugin available to handle ' + asset['type'] +
                   ' assets.')
