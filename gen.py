@@ -16,11 +16,11 @@ class WrongSourceType(Exception):
     pass
 
 class Environment:
-    def notify_copy(self, input_file, output_file):
+    def _notify_transform(self, input_file, output_file):
         print(os.path.relpath(input_file) + ' => ' +
               os.path.relpath(output_file))
 
-    def notify_skip(self, out_file):
+    def _notify_skip(self, out_file):
         print('Skipping ' + os.path.relpath(out_file))
 
     def copy_if_newer(self, input_file, output_file):
@@ -31,10 +31,10 @@ class Environment:
             # Copy the file
             shutil.copy(input_file, output_file)
             # Notify the environment
-            self.notify_copy(input_file, output_file)
+            self._notify_transform(input_file, output_file)
         else:
             # Notify the environment we are skipping this file.
-            self.notify_skip(output_file)
+            self._notify_skip(output_file)
 
 class BaseContentProvider:
     def __init__(self, asset_root, dist_root, env):
