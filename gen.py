@@ -142,6 +142,25 @@ class Jinja2ContentProvider(BaseContentProvider):
         self.env.file_from_content(input_file, rendered_template, output_file)
         return output_file
 
+class ScssContentProvider(StaticContentProvider):
+    def _install(self, source):
+        source_rel = os.path.relpath(source, self.asset_root)
+        input_file, output_file = get_input_output_file(self.asset_root,
+                                                        self.dist_root,
+                                                        source_rel)
+        output_file = os.path.splitext(output_file)[0] + '.css'
+
+        # Check for search paths provided.
+        search_paths = self.options.get('search_paths', [])
+        command_options = []
+        for path in search_paths:
+            command_options.extend(['--load-path',
+                                    os.path.join(self.env.dist_root, path)])
+
+        self.env.subprocess_transform('scss', command_options,
+                                      input_file, output_file)
+        return output_file
+
 if __name__ == '__main__':
     # Enter the directory of this script assumed to be the project root.
     root = os.path.abspath(os.path.dirname(__file__))
@@ -151,7 +170,8 @@ if __name__ == '__main__':
     dist_root = os.path.join(root, 'dist')
 
     builtins = {'static': StaticContentProvider,
-                'jinja2': Jinja2ContentProvider}
+                'jinja2': Jinja2ContentProvider,
+                'scss': ScssContentProvider}
 
     # Parse the assets.json file.
     assets_json = json.load(open('assets.json'))
