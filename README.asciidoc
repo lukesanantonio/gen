@@ -161,3 +161,5 @@ Declare an asset later like this:
 specified in the assets.json file.
 - Files that exist in the distribution directory will not go away if they are
 no longer being updated.
+- Currently errors aren't handled well. Exceptions stop execution immediately
+and therefore do not result in any cleanup, for instance.
