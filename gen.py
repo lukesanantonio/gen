@@ -11,6 +11,7 @@ import json
 import subprocess
 import jinja2
 import sys
+import imp
 
 def get_input_output_file(asset_root, dist_root, f):
     return os.path.join(asset_root, f), os.path.join(dist_root, f)
@@ -161,16 +162,6 @@ class ScssContentProvider(StaticContentProvider):
                                       input_file, output_file)
         return output_file
 
-builtins = {'static': StaticContentProvider,
-            'jinja2': Jinja2ContentProvider,
-            'scss'  : ScssContentProvider}
-
-def find_relevant_builtin(asset):
-    if asset['type'] in builtins.keys():
-        return builtins[asset['type']]
-    else:
-        return None
-
 if __name__ == '__main__':
     env = Environment(os.getcwd(), os.path.abspath('dist/'))
 
@@ -182,15 +173,36 @@ if __name__ == '__main__':
                  'Make sure you are running gen from the correct ' +
                  'directory.\n')
 
+    transformations = {'static': StaticContentProvider,
+                       'jinja2': Jinja2ContentProvider,
+                       'scss'  : ScssContentProvider}
+
+    # This way, plugins can import gen.py!
+    sys.path.insert(0, os.path.abspath(__file__))
+
+    # Add user-defined plugin objects.
+    for plugin_object in assets_json.get('plugins', []):
+        plugin_name = os.path.splitext(plugin_object['file'])[0]
+        plugin_path, plugin_name = os.path.split(plugin_name)
+
+        module_descriptor = imp.find_module(plugin_name, [plugin_path])
+        module = imp.load_module(os.path.splitext(plugin_object['file'])[0],
+                                 module_descriptor[0],
+                                 module_descriptor[1],
+                                 module_descriptor[2])
+
+        transformations[plugin_object['type']] = (
+                                      getattr(module, plugin_object['class']))
+
     output = []
     for asset in assets_json.get('assets', []):
         # Find the asset-specific dist dir.
         asset_dist = os.path.join(env.dist_root,
                                   asset.get('dist', asset['root']))
 
-        # Check our built-in list of supported types.
-        provider_class = find_relevant_builtin(asset)
-        if asset['type'] in builtins.keys():
+        # Find our class!
+        provider_class = transformations.get(asset['type'])
+        if provider_class:
             provider = provider_class(asset['root'], asset_dist,
                                       asset.get('type_options', {}), env)
         else:

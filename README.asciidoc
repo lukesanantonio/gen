@@ -156,7 +156,6 @@ Declare an asset later like this:
 
 == What's missing?
 
-- All plugin objects are ignored currently.
 - There is no way to change the distribution directory. Ideally this will be
 specified in the assets.json file.
 - Files that exist in the distribution directory will not go away if they are
