@@ -24,12 +24,18 @@ that matter!)
 
 === asset.json syntax:
 
-Your top-level object can have two optional members: +assets+ and +plugins+.
-Each being an array of 'Asset Objects' and 'Plugin Objects' respectively.
+The most important attributes of the top-level object are: +assets+ and
++plugins+. Each is an array of 'Asset Objects' and 'Plugin Objects'
+respectively, both of which will be explained later.
+
+In addition there is a +dist+ attribute. It specifies the root of the
+distribution folder relative to the project root. If not provided the default
+value is +dist/+.
 
 [source,json]
 ----
 {
+  "dist":"dist/",
   "assets":
   [
     "..."
@@ -156,8 +162,6 @@ Declare an asset later like this:
 
 == What's missing?
 
-- There is no way to change the distribution directory. Ideally this will be
-specified in the assets.json file.
 - Files that exist in the distribution directory will not go away if they are
 no longer being updated.
 - Currently errors aren't handled well. Exceptions stop execution immediately

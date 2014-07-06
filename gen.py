@@ -163,8 +163,6 @@ class ScssContentProvider(StaticContentProvider):
         return output_file
 
 if __name__ == '__main__':
-    env = Environment(os.getcwd(), os.path.abspath('dist/'))
-
     # Parse the assets.json file.
     try:
         assets_json = json.load(open('assets.json'))
@@ -172,6 +170,9 @@ if __name__ == '__main__':
         sys.exit('Failed to open the assets.json file!\n' +
                  'Make sure you are running gen from the correct ' +
                  'directory.\n')
+
+    env = Environment(os.getcwd(),
+                      os.path.abspath(assets_json.get('dist', 'dist/')))
 
     transformations = {'static': StaticContentProvider,
                        'jinja2': Jinja2ContentProvider,
