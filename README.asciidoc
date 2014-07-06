@@ -167,3 +167,4 @@ and therefore do not result in any cleanup, for instance.
 - There is no way to whitelist files that can stay in the distribution
 directory. At the moment, the script is very destructive and removes all files
 that were not installed during that invocation.
+- Everything is fairly verbose and is not configurable in that respect.
