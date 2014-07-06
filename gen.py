@@ -183,7 +183,7 @@ if __name__ == '__main__':
                  'directory.\n')
 
     output = []
-    for asset in assets_json:
+    for asset in assets_json.get('assets', []):
         # Find the asset-specific dist dir.
         asset_dist = os.path.join(env.dist_root,
                                   asset.get('dist', asset['root']))
