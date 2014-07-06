@@ -1,0 +1,155 @@
+= Gen v0
+
+A generic, JSON-based, lightweight asset pipeline for the nonconformist.
+
+This is free and unencumbered software released into the public domain. For
+more information, please refer to <http://unlicense.org/>
+
+== What is it?
+
+Gen is an asset pipeline poised for unusual or heterogeneous setups. It is a
+lightweight option for those who need to transform a set of input files in
+some arbitrary manner.
+
+Gen was made originally to generate a website from jinja2 templates and scss,
+but in theory could be used to produce any sort of output from any sort of
+input using any sort of transformation!
+
+== How do I use it?
+
+. Copy +gen.py+ into your project root. (or any other convenient location for
+that matter!)
+. Create your +assets.json+ file in the project root. See below for the syntax
+. Run the script from your project root: +python ./gen.py+
+
+=== asset.json syntax:
+
+Your top-level object can have two optional members: +assets+ and +plugins+.
+Each being an array of 'Asset Objects' and 'Plugin Objects' respectively.
+
+[source,json]
+----
+{
+  "assets":
+  [
+    "..."
+  ],
+  "plugins":
+  [
+    "..."
+  ]
+}
+----
+
+==== Asset Objects
+
+An asset object is required to have the following attributes:
+
+. +root+
+* The asset root, provided to the content provider.
+* This folder should be specified relative to the project root.
+* Filenames specified in input objects should be relative to this directory,
+in the interest of convention.
+. +type+
+* The transformation type.
+* Built-in types:
+** +static+
+*** Copies input files verbatim.
+** +jinja2+
+*** Renders Jinja2 templates with optional parameters.
+** +scss+
+*** Uses the +scss+ executable to generate css from .scss files.
+* If a type is not found in the list of built-ins, the search continues to any
+plugin objects declared in the asset.json file. If no suitable plugin object
+is found, the user is informed that the asset was not installed.
+. +dist+
+* A pathname relative to the dist/ root where files will be installed,
+* It's generally expected that files will maintain their containing folder
+structure relative to their source directory when copied over their dist root.
+This is how StaticContentProvider works but obviously any plugin can install
+files however it chooses.
+. +input+
+* An array of arbitrary objects, each one will be sent to a plugin's
++add_input+ function.
+
+The following attributes are optional:
+
+. +type_options+
+* Default: +{}+
+* Some arbitrary option, passed to the content provider.
+* This is for configuring the specific asset as a whole on-the-fly.
+
+==== Plugin Objects
+
+A plugin object is required to have the following attributes:
+
+. +type+
+* The transformation type. Asset objects need to use this as their +type+
+attribute to specify this is the plugin requested.
+. +file+
+* A python source file relative to the project root.
+. +class+
+* The name of a class to be found in the file.
+
+Plugin objects do not have any optional parameters.
+
+== How do I extend it?
+
+Easy, open up a Python class like this and implement the only two necessary
+functions.
+
+[source,python]
+----
+class MyContentProvider(BaseContentProvider):
+    def add_input(self, input):
+        pass
+    def _install(self, source):
+        pass
+----
+
+Better yet, inherit from +StaticContentProvider+ to get an +add_input+
+implementation that handles file and directory inputs (a directory input is
+equivalent to adding it's contents recursively.)
+
+[source,python]
+----
+class MyContentProvider(StaticContentProvier):
+    def _install(self, source):
+      # Source can be any arbitrary object instance.
+      pass
+----
+
+Then add the plugin to the top-level object like this:
+
+[source,json]
+----
+{
+  "plugins":
+  [
+    {
+      "type":"mycontent",
+      "file":"plugins/mycontent.py",
+      "class":"MyContentProvider"
+    }
+  ],
+  "assets":["..."]
+}
+----
+
+Declare an asset later like this:
+
+[source,json]
+----
+{
+  "plugins":["..."],
+  "assets":
+  [
+    {
+      "root":"assets/myfiles",
+      "type":"mycontent",
+      "dist":"myfiles",
+      "input":["."]
+    }
+  ]
+}
+----
