@@ -166,7 +166,7 @@ if __name__ == '__main__':
     # Parse the assets.json file.
     try:
         assets_json = json.load(open('assets.json'))
-    except:
+    except OSError:
         sys.exit('Failed to open the assets.json file!\n' +
                  'Make sure you are running gen from the correct ' +
                  'directory.\n')
