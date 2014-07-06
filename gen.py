@@ -217,4 +217,17 @@ if __name__ == '__main__':
         # Install everything while recording what files were produced.
         output.extend(provider.install_content())
 
-    # TODO Remove all files not required to be there.
+    for dirname, dirs, files in os.walk(env.dist_root, topdown=False):
+        for f in files:
+            # Check if the file should be there.
+            f = os.path.join(dirname, f)
+            if f not in output:
+                print('Removing old file: ' + os.path.relpath(f))
+                os.remove(os.path.join(env.dist_root, f))
+
+        # Also remove empty children directories.
+        for d in dirs:
+            d = os.path.join(dirname, d)
+            if len(os.listdir(d)) == 0:
+                print('Removing empty directory: ' + os.path.relpath(d))
+                os.rmdir(d)

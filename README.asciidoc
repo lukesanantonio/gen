@@ -162,7 +162,8 @@ Declare an asset later like this:
 
 == What's missing?
 
-- Files that exist in the distribution directory will not go away if they are
-no longer being updated.
 - Currently errors aren't handled well. Exceptions stop execution immediately
 and therefore do not result in any cleanup, for instance.
+- There is no way to whitelist files that can stay in the distribution
+directory. At the moment, the script is very destructive and removes all files
+that were not installed during that invocation.
