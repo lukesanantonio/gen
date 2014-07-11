@@ -208,7 +208,7 @@ if __name__ == '__main__':
                                       asset.get('type_options', {}), env)
         else:
             sys.stderr.write('No plugin available to handle ' +
-                             asset['type'] + ' assets.')
+                             asset['type'] + ' assets.\n')
             continue
 
         # Tell the provider about it's input.
