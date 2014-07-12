@@ -42,15 +42,23 @@ class Output:
         self.log.addHandler(logging.StreamHandler(sys.stdout))
         self.log.setLevel(logging.INFO)
 
-    def notify_transform(self, input_f, output_f):
-        self.log.info(os.path.relpath(input_f) + ' => ' +
-                      os.path.relpath(output_f))
+    def on_transform(self, in_file, out_file):
+        self.log.info(os.path.relpath(in_file) + ' => ' +
+                      os.path.relpath(out_file))
 
-    def notify_skip(self, out_file):
+    def on_skip(self, out_file):
         self.log.info('Skipping ' + os.path.relpath(out_file))
 
-    def notify_command(self, args):
+    def on_command(self, args):
         self.log.info('Running: ' + ' '.join(args))
+
+    def on_error(self, msg):
+        self.log.error(msg)
+
+    def on_remove(self, filename, **kwargs):
+        adj = kwargs.get('adj', '') + ' '
+        filetype = kwargs.get('filetype') or 'file'
+        self.log.info("Removing " + adj + filetype + ': ' + filename)
 
 class Operations:
     def __init__(self, out=None):
@@ -64,10 +72,10 @@ class Operations:
             shutil.copy(input_file, output_file)
             shutil.copystat(input_file, output_file)
             # Notify the environment
-            self.out.notify_transform(input_file, output_file)
+            self.out.on_transform(input_file, output_file)
         else:
             # Notify the environment we are skipping this file.
-            self.out.notify_skip(output_file)
+            self.out.on_skip(output_file)
 
     def file_from_content(self, input_file, content, output_file):
         if is_newer(input_file, output_file):
@@ -75,9 +83,9 @@ class Operations:
             with open(output_file, "w") as f:
                 f.write(content)
             shutil.copystat(input_file, output_file)
-            self.out.notify_transform(input_file, output_file)
+            self.out.on_transform(input_file, output_file)
         else:
-            self.out.notify_skip(output_file)
+            self.out.on_skip(output_file)
 
     def subprocess_transform(self, prg, options, input_file, output_file):
         if is_newer(input_file, output_file):
@@ -86,12 +94,12 @@ class Operations:
 
             os.makedirs(os.path.dirname(output_file), exist_ok=True)
 
-            self.out.notify_command(args)
+            self.out.on_command(args)
             if subprocess.call(args):
-                self.out.notify_transform(input_file, output_file)
+                self.out.on_transform(input_file, output_file)
                 shutil.copystat(input_file, output_file)
         else:
-            self.out.notify_skip(output_file)
+            self.out.on_skip(output_file)
 
 class BaseContentProvider:
     def __init__(self, asset_root, dist_root, type_options, env, ops=None):
@@ -200,13 +208,15 @@ if __name__ == '__main__':
                              "(default ./assets.json).")
     arguments = parser.parse_args()
 
+    out = Output()
+
     # Parse the assets.json file.
     try:
-        assets_json = json.load(open(arguments.assets_file or 'assets.json'))
+        assets_json_filename = arguments.assets_file or 'assets.json'
+        assets_json = json.load(open(assets_json_filename))
     except OSError:
-        sys.exit('Failed to open the assets.json file!\n' +
-                 'Make sure you are running gen from the correct ' +
-                 'directory.')
+        out.on_error('Failed to open ' + assets_json_filename + '!')
+        sys.exit(1)
 
     env = Environment(os.getcwd(),
                       os.path.abspath(assets_json.get('dist', 'dist/')))
@@ -226,14 +236,15 @@ if __name__ == '__main__':
         if provider_class:
             try:
                 provider = provider_class(asset['root'], asset_dist,
-                                          asset.get('type_options', {}), env)
+                                          asset.get('type_options', {}), env,
+                                          Operations(out))
             except AssetRootNotFound:
-                sys.stderr.write("Asset root '" + asset['root']  +
-                                 "' not found.\n")
+                out.on_error("Invalid asset root: '" + asset['root'] +
+                             "' - Skipping")
                 continue
         else:
-            sys.stderr.write('No plugin available to handle ' +
-                             asset['type'] + ' assets.\n')
+            out.on_error('No plugin available to handle ' +
+                         asset['type'] + ' assets.\n')
             continue
 
         # Tell the provider to install each input.
@@ -245,12 +256,13 @@ if __name__ == '__main__':
             # Check if the file should be there.
             f = os.path.join(dirname, f)
             if f not in output:
-                print('Removing old file: ' + os.path.relpath(f))
+                out.on_remove(os.path.relpath(f), adj='old')
                 os.remove(os.path.join(env.dist_root, f))
 
         # Also remove empty children directories.
         for d in dirs:
             d = os.path.join(dirname, d)
             if len(os.listdir(d)) == 0:
-                print('Removing empty directory: ' + os.path.relpath(d))
+                out.on_remove(os.path.relpath(f), adj='empty',
+                              filetype='directory')
                 os.rmdir(d)
