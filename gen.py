@@ -243,8 +243,8 @@ if __name__ == '__main__':
                              "' - Skipping")
                 continue
         else:
-            out.on_error('No plugin available to handle ' +
-                         asset['type'] + ' assets.\n')
+            out.on_error("No plugin available to handle '" +
+                         asset['type'] + "' assets.")
             continue
 
         # Tell the provider to install each input.
