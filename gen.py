@@ -108,7 +108,7 @@ class StaticContentProvider(BaseContentProvider):
     def _get_source_list(self, input_obj):
         # We just expect a string here.
         if not isinstance(input_obj, str):
-            raise WrongInputType
+            raise WrongInputType('A static input object must be a string')
 
         # If we are given a directory, use all the files in that directory.
         input_abspath = os.path.join(self.asset_root, input_obj)
@@ -142,11 +142,12 @@ class Jinja2ContentProvider(BaseContentProvider):
     def __validate_input(self, input_obj):
         # Here we expect an object with a filename and parameters.
         if not isinstance(input_obj, dict):
-            raise WrongInputType
+            raise WrongInputType('A Jinja2 input object must be a dict!')
 
         # As long as we have a filename we should be fine.
         if 'filename' not in input_obj:
-            raise WrongInputType("Filename required in input object!")
+            raise WrongInputType('A filename is required in Jinja2 input ' +
+                                 'objects!')
 
     def install_input(self, input_obj):
         self.__validate_input(input_obj)
