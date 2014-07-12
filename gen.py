@@ -47,7 +47,7 @@ class Output:
                       os.path.relpath(out_file))
 
     def on_skip(self, out_file):
-        self.log.info('Skipping ' + os.path.relpath(out_file))
+        self.log.debug('Skipping ' + os.path.relpath(out_file))
 
     def on_command(self, args):
         self.log.info('Running: ' + ' '.join(args))
@@ -206,9 +206,15 @@ if __name__ == '__main__':
     parser.add_argument('-f', '--assets-file', default=None,
                         help="Specify the assets json file " +
                              "(default ./assets.json).")
+    parser.add_argument('-v', '--verbose', action="count",
+                        help="Log files copied to stderr.")
     arguments = parser.parse_args()
 
     out = Output()
+    if arguments.verbose == 1:
+        out.log.setLevel(logging.INFO)
+    elif arguments.verbose > 1:
+        out.log.setLevel(logging.DEBUG)
 
     # Parse the assets.json file.
     try:
