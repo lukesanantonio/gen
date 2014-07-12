@@ -124,9 +124,16 @@ class BaseContentProvider:
         self.options = type_options
         self.env = env
         self.operations = ops or Operations()
+        def list_compiled_files(self, input_obj):
+            """Return a list of files that would be installed.
+
+            The files returned will be relative to the distribution root.
+            """
+            raise NotImplementedError
 
         def install_input(self, input_obj):
             raise NotImplementedError
+
 
 class StaticContentProvider(BaseContentProvider):
     def _get_source_list(self, input_obj):
@@ -145,6 +152,13 @@ class StaticContentProvider(BaseContentProvider):
         # Otherwise it's just a file, easy.
         else:
             return [os.path.normpath(input_abspath)]
+
+    def list_compiled_files(self, input_obj):
+        source_list = _get_source_list(input_obj)
+        compiled_list = []
+        for source in source_list:
+            compiled_list.append(os.path.relpath(source, self.asset_root))
+        return compiled_list
 
     def install_input(self, input_obj):
         source_list = self._get_source_list(input_obj)
@@ -173,6 +187,10 @@ class Jinja2ContentProvider(BaseContentProvider):
             raise WrongInputType('A filename is required in Jinja2 input ' +
                                  'objects!')
 
+    def list_compiled_files(self, input_obj):
+        self.__validate_input(input_obj)
+        return input_obj['filename']
+
     def install_input(self, input_obj):
         self.__validate_input(input_obj)
 
@@ -191,6 +209,14 @@ class Jinja2ContentProvider(BaseContentProvider):
         return [out_f]
 
 class ScssContentProvider(StaticContentProvider):
+    def list_compiled_files(self, input_obj):
+        source_list = self._get_source_list(input_obj)
+        compiled_list = []
+        for source in source_list:
+            source = os.path.splitext(source)[0] + '.css'
+            compiled_list.append(os.path.relpath(source, self.asset_root))
+        return compiled_list
+
     def install_input(self, input_obj):
         source_list = self._get_source_list(input_obj)
         installed_files = []
