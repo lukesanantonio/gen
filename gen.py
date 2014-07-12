@@ -26,8 +26,8 @@ class WrongSourceType(Exception):
 class Environment:
     def __init__(self, root, dist_root):
         """Initialize the root and the dist root with given values."""
-        self.root = root
-        self.dist_root = dist_root
+        self.root = os.path.abspath(root)
+        self.dist_root = os.path.abspath(dist_root)
 
     def _notify_transform(self, input_file, output_file):
         print(os.path.relpath(input_file) + ' => ' +
