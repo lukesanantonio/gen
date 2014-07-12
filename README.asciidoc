@@ -22,6 +22,14 @@ that matter!)
 . Create your +assets.json+ file in the project root. See below for the syntax
 . Run the script from your project root: +python ./gen.py+
 
+=== More usage examples:
+. Specify a file to load as the top-level object in place of the assets.json.
+* +python ./gen.py -f vendor/myassets.json+.
+. Change verbosity level.
+* +python ./gen.py -vv+.
+** +-v+: Displays new files as they are being installed.
+** +-vv+: Displays new files and skipped files.
+
 === asset.json syntax:
 
 The most important attributes of the top-level object are: +assets+ and
@@ -30,7 +38,7 @@ respectively, both of which will be explained later.
 
 In addition there is a +dist+ attribute. It specifies the root of the
 distribution folder relative to the project root. If not provided the default
-value is +dist/+.
+value is +'dist/'+.
 
 [source,json]
 ----
@@ -52,7 +60,7 @@ value is +dist/+.
 An asset object is required to have the following attributes:
 
 . +root+
-* The asset root, provided to the content provider.
+* The asset root, provided to the asset class.
 * This folder should be specified relative to the project root.
 * Filenames specified in input objects should be relative to this directory,
 in the interest of convention.
@@ -69,23 +77,25 @@ in the interest of convention.
 plugin objects declared in the asset.json file. If no suitable plugin object
 is found, the user is informed that the asset was not installed.
 . +dist+
-* A pathname relative to the dist/ root where files will be installed,
+* A pathname relative to the dist/ root where files will be installed.
 * It's generally expected that files will maintain their containing folder
 structure relative to their source directory when copied over their dist root.
-This is how StaticContentProvider works but obviously any plugin can install
+This is how StaticAsset works but obviously any plugin can install files
 files however it chooses.
 . +input+
-* An array of arbitrary objects, each one will be sent to a plugin's
-+add_input+ function.
+* An array of arbitrary objects that will be passed to the asset class and
+validated.
 
 The following attributes are optional:
 
 . +type_options+
 * Default: +{}+
-* Some arbitrary option, passed to the content provider.
+* Some arbitrary option, passed to the asset class.
 * This is for configuring the specific asset as a whole on-the-fly.
 
 ==== Plugin Objects
+
+IMPORTANT: Custom plugin support is not implemented!
 
 A plugin object is required to have the following attributes:
 
@@ -101,27 +111,29 @@ Plugin objects do not have any optional parameters.
 
 == How do I extend it?
 
-Easy, open up a Python class like this and implement the only two necessary
-functions.
+Easy, open up a Python class like this and implement the following:
 
 [source,python]
 ----
-class MyContentProvider(BaseContentProvider):
-    def add_input(self, input):
+class MyAsset(BaseAsset):
+    def list_output(self):
         pass
-    def _install(self, source):
+    def install(self, filename):
+        pass
+    def validate(self, input_obj):
         pass
 ----
 
-Better yet, inherit from +StaticContentProvider+ to get an +add_input+
+Better yet, inherit from +StaticAsset+ to get a +list_output+
 implementation that handles file and directory inputs (a directory input is
-equivalent to adding it's contents recursively.)
+equivalent to adding it's contents recursively.) and a +validate+
+implementation that asserts the input is a pathname pointing to an existing
+file.
 
 [source,python]
 ----
-class MyContentProvider(StaticContentProvier):
-    def _install(self, source):
-      # Source can be any arbitrary object instance.
+class MyStaticAsset(StaticContentProvier):
+    def install(self, filename):
       pass
 ----
 
@@ -133,16 +145,17 @@ Then add the plugin to the top-level object like this:
   "plugins":
   [
     {
-      "type":"mycontent",
-      "file":"plugins/mycontent.py",
-      "class":"MyContentProvider"
+      "type":"myasset",
+      "file":"plugins/myasset.py",
+      "class":"MyAsset"
     }
   ],
   "assets":["..."]
 }
 ----
 
-Declare an asset later like this:
+Declare an asset later like this: (Using the +type+ attribute specified in the
+plugin object beforehand).
 
 [source,json]
 ----
@@ -152,7 +165,7 @@ Declare an asset later like this:
   [
     {
       "root":"assets/myfiles",
-      "type":"mycontent",
+      "type":"myasset",
       "dist":"myfiles",
       "input":["."]
     }
@@ -162,9 +175,8 @@ Declare an asset later like this:
 
 == What's missing?
 
-- Currently errors aren't handled well. Exceptions stop execution immediately
-and therefore do not result in any cleanup, for instance.
 - There is no way to whitelist files that can stay in the distribution
 directory. At the moment, the script is very destructive and removes all files
 that were not installed during that invocation.
-- Everything is fairly verbose and is not configurable in that respect.
+- No plugin support.
+- No dependency management.
