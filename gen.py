@@ -40,7 +40,7 @@ class Output:
     def __init__(self, logger=None):
         self.log = logger or logging.getLogger(__name__)
         self.log.addHandler(logging.StreamHandler(sys.stdout))
-        self.log.setLevel(logging.INFO)
+        self.log.setLevel(logging.WARNING)
 
     def on_transform(self, in_file, out_file):
         self.log.info(os.path.relpath(in_file) + ' => ' +
