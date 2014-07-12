@@ -215,7 +215,7 @@ if __name__ == '__main__':
         assets_json_filename = arguments.assets_file or 'assets.json'
         assets_json = json.load(open(assets_json_filename))
     except OSError:
-        out.on_error('Failed to open ' + assets_json_filename + '!')
+        out.on_error("Failed to open '" + assets_json_filename + "'!")
         sys.exit(1)
 
     env = Environment(os.getcwd(),
