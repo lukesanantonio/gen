@@ -13,6 +13,7 @@ import jinja2
 import sys
 import imp
 import argparse
+import logging
 
 # Helper functions
 def in_out_file(asset_root, dist_root, f):
@@ -36,17 +37,20 @@ class Environment:
         self.dist_root = os.path.abspath(dist_root)
 
 class Output:
+    def __init__(self, logger=None):
+        self.log = logger or logging.getLogger(__name__)
+        self.log.addHandler(logging.StreamHandler(sys.stdout))
+        self.log.setLevel(logging.INFO)
+
     def notify_transform(self, input_f, output_f):
-        print(os.path.relpath(input_f) + ' => ' + os.path.relpath(output_f))
+        self.log.info(os.path.relpath(input_f) + ' => ' +
+                      os.path.relpath(output_f))
 
     def notify_skip(self, out_file):
-        print('Skipping ' + os.path.relpath(out_file))
+        self.log.info('Skipping ' + os.path.relpath(out_file))
 
     def notify_command(self, args):
-        sys.stdout.write('Running:')
-        for part in args:
-            sys.stdout.write(' ' + part)
-        sys.stdout.write('\n')
+        self.log.info('Running: ' + ' '.join(args))
 
 class Operations:
     def __init__(self, out=None):
