@@ -174,7 +174,7 @@ if __name__ == '__main__':
     except OSError:
         sys.exit('Failed to open the assets.json file!\n' +
                  'Make sure you are running gen from the correct ' +
-                 'directory.\n')
+                 'directory.')
 
     env = Environment(os.getcwd(),
                       os.path.abspath(assets_json.get('dist', 'dist/')))
