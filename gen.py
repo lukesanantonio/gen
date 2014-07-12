@@ -44,13 +44,19 @@ class Operations:
             sys.stdout.write(' ' + part)
         sys.stdout.write('\n')
 
-    def copy_if_newer(self, input_file, output_file):
-        if (not os.path.exists(output_file) or
-            os.path.getmtime(input_file) > os.path.getmtime(output_file)):
+    def is_newer(self, i_file, o_file):
+        if (not os.path.exists(o_file) or
+            os.path.getmtime(i_file) > os.path.getmtime(o_file)):
+            return True
+        return False
+
+    def copy(self, input_file, output_file):
+        if self.is_newer(input_file, output_file):
             # Make sure the destination directory exists.
             os.makedirs(os.path.dirname(output_file), exist_ok=True)
             # Copy the file
             shutil.copy(input_file, output_file)
+            shutil.copystat(input_file, output_file)
             # Notify the environment
             self._notify_transform(input_file, output_file)
         else:
@@ -58,20 +64,28 @@ class Operations:
             self._notify_skip(output_file)
 
     def file_from_content(self, input_file, content, output_file):
-        os.makedirs(os.path.dirname(output_file), exist_ok=True)
-        with open(output_file, "w") as f:
-            f.write(content)
-        self._notify_transform(input_file, output_file)
+        if self.is_newer(input_file, output_file):
+            os.makedirs(os.path.dirname(output_file), exist_ok=True)
+            with open(output_file, "w") as f:
+                f.write(content)
+            shutil.copystat(input_file, output_file)
+            self._notify_transform(input_file, output_file)
+        else:
+            self._notify_skip(output_file)
 
     def subprocess_transform(self, prg, options, input_file, output_file):
-        args = [prg, input_file, output_file]
-        args[1:1] = options
+        if self.is_newer(input_file, output_file):
+            args = [prg, input_file, output_file]
+            args[1:1] = options
 
-        os.makedirs(os.path.dirname(output_file), exist_ok=True)
+            os.makedirs(os.path.dirname(output_file), exist_ok=True)
 
-        self._notify_command(args)
-        if subprocess.call(args):
-            self._notify_transform(input_file, output_file)
+            self._notify_command(args)
+            if subprocess.call(args):
+                self._notify_transform(input_file, output_file)
+                shutil.copystat(input_file, output_file)
+        else:
+            self._notify_skip(output_file)
 
 class BaseContentProvider:
     def __init__(self, asset_root, dist_root, type_options, env, ops=None):
@@ -113,7 +127,7 @@ class StaticContentProvider(BaseContentProvider):
             source_rel = os.path.relpath(source, self.asset_root)
             in_f, out_f = in_out_file(self.asset_root, self.dist_root,
                                      source_rel)
-            self.operations.copy_if_newer(in_f, out_f)
+            self.operations.copy(in_f, out_f)
             installed_files.append(os.path.join(self.dist_root, out_f))
         return installed_files
 
