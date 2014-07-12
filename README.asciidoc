@@ -1,4 +1,4 @@
-= Gen v0
+= Gen v0.1
 
 A generic, JSON-based, lightweight asset pipeline for the nonconformist.
 
