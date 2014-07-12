@@ -203,48 +203,36 @@ class Jinja2ContentProvider(BaseContentProvider):
         else:
             rendered_template = template.render()
 
-        in_f, out_f = in_out_file(self.asset_root, self.dist_root,
-                                  filename)
+        in_f, out_f = in_out_file(self.root, self.dist, filename)
         self.operations.file_from_content(in_f, rendered_template, out_f)
-        return [out_f]
 
-class ScssContentProvider(StaticContentProvider):
-    def list_compiled_files(self, input_obj):
-        source_list = self._get_source_list(input_obj)
-        compiled_list = []
-        for source in source_list:
-            source = os.path.splitext(source)[0] + '.css'
-            compiled_list.append(os.path.relpath(source, self.asset_root))
-        return compiled_list
+class ScssAsset(StaticAsset):
+    def list_output(self):
+        output = super().list_output()
+        for i in range(len(output)):
+            output[i] = os.path.splitext(output[i])[0] + '.css'
+        return output
 
-    def install_input(self, input_obj):
-        source_list = self._get_source_list(input_obj)
-        installed_files = []
-        for source in source_list:
-            source_rel = os.path.relpath(source, self.asset_root)
-            in_f, out_f = in_out_file(self.asset_root, self.dist_root,
-                                      source_rel)
-            out_f = os.path.splitext(out_f)[0] + '.css'
+    def install(self, filename):
+        in_f = os.path.join(self.root, os.path.splitext(filename)[0] + '.scss')
+        out_f = os.path.join(self.dist, filename)
 
-            # Check for search paths provided.
-            search_paths = self.options.get('search_paths', [])
-            command_options = []
-            for path in search_paths:
-                command_options.extend(['--load-path',
-                                        os.path.join(self.env.dist_root,path)])
+        # Check for search paths provided.
+        search_paths = self.options.get('search_paths', [])
+        command_options = []
+        for path in search_paths:
+            command_options.extend(['--load-path',
+                                    os.path.join(self.env.dist_root, path)])
 
-            self.operations.subprocess_transform('scss', command_options,
-                                                 in_f, out_f)
-            installed_files.append(os.path.join(self.dist_root, out_f))
-        return installed_files
-
+        self.operations.subprocess_transform('scss', command_options,
+                                             in_f, out_f)
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument('-f', '--assets-file', default=None,
                         help="Specify the assets json file " +
                              "(default ./assets.json).")
-    parser.add_argument('-v', '--verbose', action="count",
+    parser.add_argument('-v', '--verbose', action="count", default=0,
                         help="Log files copied to stderr.")
     arguments = parser.parse_args()
 
