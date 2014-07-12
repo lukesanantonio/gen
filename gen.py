@@ -39,8 +39,25 @@ def find_asset_object(assets, directory):
 # Exceptions
 class AssetRootNotFound(Exception):
     pass
-class WrongInputType(Exception):
-    pass
+
+class ValidationError(Exception):
+    def __init__(self, msg, obj):
+        super().__init__(msg)
+        self.obj = obj
+class InputTypeError(ValidationError):
+    def __init__(self, obj, expected_type):
+        super().__init__("Input object '{0}' must be type: '{1}'"
+                         .format(repr(obj), str(expected_type)), obj)
+        self.expected_type = expected_type
+class InputAttributeError(ValidationError):
+    def __init__(self, obj, attr):
+        super().__init__("Input object '{0}' must have attribute: '{1}'"
+                         .format(repr(obj), str(attr)), obj)
+        self.attr = attr
+class SourceNotFoundError(ValidationError):
+    def __init__(self, obj, fname):
+        super().__init__("Source file '{0}' doesn't exist.".format(fname), obj)
+        self.fname = fname
 
 class Environment:
     def __init__(self, root, dist_root):
@@ -113,89 +130,114 @@ class Operations:
         else:
             self.out.on_skip(output_file)
 
-class BaseContentProvider:
-    def __init__(self, asset_root, dist_root, type_options, env, ops=None):
-        if not os.path.exists(asset_root):
-            raise AssetRootNotFound
-        # Don't rely on the cwd directory staying as it throughout the
-        # lifetime of the object. That is, make absolute paths now.
-        self.asset_root = os.path.abspath(asset_root)
-        self.dist_root = os.path.abspath(dist_root)
-        self.options = type_options
+class BaseAsset:
+    def __init__(self, root, dist, inputs, ops, options, env):
+        self.root = os.path.abspath(root)
+        self.dist = os.path.abspath(dist)
+
+        # Validate each input.
+        for i in range(len(inputs)):
+            try:
+                self.validate(inputs[i])
+            except ValidationError as e:
+                # Rethrow with a modified message.
+                tb = sys.exc_info()[2]
+                e.args[0] = 'input[{0}]: '.format(i) + e.args[0]
+                raise e.with_traceback(tb)
+            except NotImplementedError:
+                # If validation isn't implemented that doesn't really matter.
+                # Just bail.
+                break
+        # If there was validation, it passed.
+        self.inputs = inputs
+
+        self.operations = ops
+        self.options = options
         self.env = env
-        self.operations = ops or Operations()
-        def list_compiled_files(self, input_obj):
-            """Return a list of files that would be installed.
 
-            The files returned will be relative to the distribution root.
-            """
-            raise NotImplementedError
+    def list_output(self):
+        raise NotImplementedError
+    def install(self, filename):
+        raise NotImplementedError
+    def validate(self, input_obj):
+        raise NotImplementedError
 
-        def install_input(self, input_obj):
-            raise NotImplementedError
+    def install_all(self):
+        """Install all files and return what files were installed."""
+        to_install = self.list_output()
+        for f in to_install:
+            self.install(f)
+        return to_install
 
+class StaticAsset(BaseAsset):
+    def validate(self, fname):
+        # Make sure it's a string.
+        if not isinstance(fname, str):
+            raise InputTypeError(fname, str)
+        # Make sure the file exists!
+        if not os.path.exists(os.path.join(self.root, fname)):
+            raise SourceNotFoundError(fname, fname)
 
-class StaticContentProvider(BaseContentProvider):
     def _get_source_list(self, input_obj):
-        # We just expect a string here.
-        if not isinstance(input_obj, str):
-            raise WrongInputType('A static input object must be a string')
-
         # If we are given a directory, use all the files in that directory.
-        input_abspath = os.path.join(self.asset_root, input_obj)
-        if os.path.isdir(input_abspath):
+        abs_input = os.path.join(self.root, input_obj)
+        if os.path.isdir(abs_input):
             files = []
-            for child in os.listdir(input_abspath):
-                child = os.path.join(input_abspath, child)
-                files.extend(self._get_source_list(child))
+            for child in os.listdir(abs_input):
+                child = os.path.join(abs_input, child)
+                files.extend(self._get_source_list(os.path.normpath(child)))
             return files
         # Otherwise it's just a file, easy.
         else:
-            return [os.path.normpath(input_abspath)]
+            return [os.path.relpath(abs_input, self.root)]
 
-    def list_compiled_files(self, input_obj):
-        source_list = _get_source_list(input_obj)
-        compiled_list = []
-        for source in source_list:
-            compiled_list.append(os.path.relpath(source, self.asset_root))
-        return compiled_list
+    def list_output(self):
+        files = []
+        for i in self.inputs:
+            files.extend(self._get_source_list(i))
+        return files
 
-    def install_input(self, input_obj):
-        source_list = self._get_source_list(input_obj)
-        installed_files = []
-        for source in source_list:
-            source_rel = os.path.relpath(source, self.asset_root)
-            in_f, out_f = in_out_file(self.asset_root, self.dist_root,
-                                     source_rel)
-            self.operations.copy(in_f, out_f)
-            installed_files.append(os.path.join(self.dist_root, out_f))
-        return installed_files
+    def install(self, filename):
+        in_f, out_f = in_out_file(self.root, self.dist, filename)
+        self.operations.copy(in_f, out_f)
 
-class Jinja2ContentProvider(BaseContentProvider):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        loader = jinja2.FileSystemLoader(self.asset_root)
-        self.__jinja2env = jinja2.Environment(loader=loader)
-
-    def __validate_input(self, input_obj):
+class Jinja2Asset(BaseAsset):
+    def validate(self, input_obj):
         # Here we expect an object with a filename and parameters.
         if not isinstance(input_obj, dict):
-            raise WrongInputType('A Jinja2 input object must be a dict!')
+            raise InputTypeError(input_obj, dict)
 
-        # As long as we have a filename we should be fine.
-        if 'filename' not in input_obj:
-            raise WrongInputType('A filename is required in Jinja2 input ' +
-                                 'objects!')
+        # Make sure we have a filename and that it exists.
+        f = input_obj.get('filename', None)
+        if f is None:
+            raise InputAttributeError(input_obj, 'filename')
+        if not os.path.exists(os.path.join(self.root, f)):
+            raise SourceNotFoundError(input_obj, f)
 
-    def list_compiled_files(self, input_obj):
-        self.__validate_input(input_obj)
-        return input_obj['filename']
+    def list_output(self):
+        output = []
+        for i in self.inputs:
+            output.append(i['filename'])
+        return output
 
-    def install_input(self, input_obj):
-        self.__validate_input(input_obj)
+    def install(self, filename):
+        # Set up our Jinja2 environment.
+        loader = jinja2.FileSystemLoader(self.root)
+        self.__jinja2env = jinja2.Environment(loader=loader)
 
-        # Remember, our filename is relative to the asset root.
-        filename = input_obj['filename']
+        # Find the asset object based off it's filename.
+        # TODO Make this process automatic in the base class.
+        input_obj = None
+        for i in self.inputs:
+            if i['filename'] == filename:
+                input_obj = i
+                break
+        if input_obj is None:
+            raise ValueError("Cannot find input object with filename: '{0}'"
+                             .format(filename))
+
+        # The filename is relative to the asset root, but that is where Jinja2
+        # looks, so it works out.
         template = self.__jinja2env.get_template(filename)
 
         if 'parameters' in input_obj:
@@ -253,35 +295,33 @@ if __name__ == '__main__':
     env = Environment(os.getcwd(),
                       os.path.abspath(assets_json.get('dist', 'dist/')))
 
-    transformations = {'static': StaticContentProvider,
-                       'jinja2': Jinja2ContentProvider,
-                       'scss'  : ScssContentProvider}
+    transformations = {'static': StaticAsset, 'jinja2': Jinja2Asset,
+                       'scss': ScssAsset}
 
     output = []
     for asset in assets_json.get('assets', []):
         # Find the asset-specific dist dir.
         asset_dist = os.path.join(env.dist_root,
                                   asset.get('dist', asset['root']))
+        asset_dist = os.path.normpath(asset_dist)
 
         # Find our class!
         provider_class = transformations.get(asset['type'])
         if provider_class:
             try:
                 provider = provider_class(asset['root'], asset_dist,
-                                          asset.get('type_options', {}), env,
-                                          Operations(out))
-            except AssetRootNotFound:
-                out.on_error("Invalid asset root: '" + asset['root'] +
-                             "' - Skipping")
-                continue
+                                          asset['input'], Operations(out),
+                                          asset.get('type_options', {}), env)
+            except ValidationError as e:
+                out.on_error(e)
+                continue;
         else:
             out.on_error("No plugin available to handle '" +
                          asset['type'] + "' assets.")
             continue
 
-        # Tell the provider to install each input.
-        for i in asset['input']:
-            output.extend(provider.install_input(i))
+        for f in provider.install_all():
+            output.append(os.path.join(asset_dist, f))
 
     for dirname, dirs, files in os.walk(env.dist_root, topdown=False):
         for f in files:
