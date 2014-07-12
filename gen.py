@@ -215,23 +215,6 @@ if __name__ == '__main__':
                        'jinja2': Jinja2ContentProvider,
                        'scss'  : ScssContentProvider}
 
-    # This way, plugins can import gen.py!
-    sys.path.insert(0, os.path.abspath(__file__))
-
-    # Add user-defined plugin objects.
-    for plugin_object in assets_json.get('plugins', []):
-        plugin_name = os.path.splitext(plugin_object['file'])[0]
-        plugin_path, plugin_name = os.path.split(plugin_name)
-
-        module_descriptor = imp.find_module(plugin_name, [plugin_path])
-        module = imp.load_module(os.path.splitext(plugin_object['file'])[0],
-                                 module_descriptor[0],
-                                 module_descriptor[1],
-                                 module_descriptor[2])
-
-        transformations[plugin_object['type']] = (
-                                      getattr(module, plugin_object['class']))
-
     output = []
     for asset in assets_json.get('assets', []):
         # Find the asset-specific dist dir.
