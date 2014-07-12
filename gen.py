@@ -12,6 +12,7 @@ import subprocess
 import jinja2
 import sys
 import imp
+import argparse
 
 def get_input_output_file(asset_root, dist_root, f):
     return os.path.join(asset_root, f), os.path.join(dist_root, f)
@@ -168,9 +169,16 @@ class ScssContentProvider(StaticContentProvider):
         return output_file
 
 if __name__ == '__main__':
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-f', '--assets-file', default=None,
+                        help="Specify the assets json file " +
+                             "(default ./assets.json).")
+    arguments = parser.parse_args()
+
     # Parse the assets.json file.
     try:
-        assets_json = json.load(open('assets.json'))
+        assets_json = json.load(open(arguments.assets_file or 'assets.json'))
     except OSError:
         sys.exit('Failed to open the assets.json file!\n' +
                  'Make sure you are running gen from the correct ' +
