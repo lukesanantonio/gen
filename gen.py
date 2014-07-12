@@ -14,13 +14,14 @@ import sys
 import imp
 import argparse
 
-def get_input_output_file(asset_root, dist_root, f):
+# Helper functions
+def in_out_file(asset_root, dist_root, f):
     return os.path.join(asset_root, f), os.path.join(dist_root, f)
 
 # Exceptions
 class AssetRootNotFound(Exception):
     pass
-class WrongSourceType(Exception):
+class WrongInputType(Exception):
     pass
 
 class Environment:
@@ -29,6 +30,7 @@ class Environment:
         self.root = os.path.abspath(root)
         self.dist_root = os.path.abspath(dist_root)
 
+class Operations:
     def _notify_transform(self, input_file, output_file):
         print(os.path.relpath(input_file) + ' => ' +
               os.path.relpath(output_file))
@@ -72,101 +74,102 @@ class Environment:
             self._notify_transform(input_file, output_file)
 
 class BaseContentProvider:
-    def __init__(self, asset_root, dist_root, type_options, env):
+    def __init__(self, asset_root, dist_root, type_options, env, ops=None):
+        if not os.path.exists(asset_root):
+            raise AssetRootNotFound
         # Don't rely on the cwd directory staying as it throughout the
         # lifetime of the object. That is, make absolute paths now.
         self.asset_root = os.path.abspath(asset_root)
-        if not os.path.exists(self.asset_root):
-            raise AssetRootNotFound
         self.dist_root = os.path.abspath(dist_root)
         self.options = type_options
         self.env = env
-        self._sources = []
+        self.operations = ops or Operations()
 
-    def install_content(self):
-        """Install all files necessary and return a list of those files."""
-        out_files = []
-        for source in self._sources:
-            out_files.append(self._install(source))
-        return out_files
+        def install_input(self, input_obj):
+            raise NotImplementedError
 
 class StaticContentProvider(BaseContentProvider):
-    def add_input(self, input_obj):
+    def _get_source_list(self, input_obj):
         # We just expect a string here.
         if not isinstance(input_obj, str):
-            raise WrongSourceType
+            raise WrongInputType
 
         # If we are given a directory, use all the files in that directory.
         input_abspath = os.path.join(self.asset_root, input_obj)
         if os.path.isdir(input_abspath):
+            files = []
             for child in os.listdir(input_abspath):
-                self.add_input(os.path.join(input_abspath, child))
+                child = os.path.join(input_abspath, child)
+                files.extend(self._get_source_list(child))
+            return files
         # Otherwise it's just a file, easy.
         else:
-            self._sources.append(os.path.normpath(input_abspath))
+            return [os.path.normpath(input_abspath)]
 
-    def _install(self, source):
-        source_rel = os.path.relpath(source, self.asset_root)
-        input_file, output_file = get_input_output_file(self.asset_root,
-                                                        self.dist_root,
-                                                        source_rel)
-        self.env.copy_if_newer(input_file, output_file)
-        return output_file
+    def install_input(self, input_obj):
+        source_list = self._get_source_list(input_obj)
+        installed_files = []
+        for source in source_list:
+            source_rel = os.path.relpath(source, self.asset_root)
+            in_f, out_f = in_out_file(self.asset_root, self.dist_root,
+                                     source_rel)
+            self.operations.copy_if_newer(in_f, out_f)
+            installed_files.append(os.path.join(self.dist_root, out_f))
+        return installed_files
 
 class Jinja2ContentProvider(BaseContentProvider):
-    def __init__(self, asset_root, dist_root, type_options, env):
-        BaseContentProvider.__init__(self, asset_root, dist_root,
-                                     type_options, env)
-        self._jinja2env = (
-               jinja2.Environment(loader=jinja2.FileSystemLoader(asset_root)))
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        loader = jinja2.FileSystemLoader(self.asset_root)
+        self.__jinja2env = jinja2.Environment(loader=loader)
 
-    def add_input(self, input_obj):
+    def __validate_input(self, input_obj):
         # Here we expect an object with a filename and parameters.
         if not isinstance(input_obj, dict):
-            raise WrongSourceType
+            raise WrongInputType
 
-        # Do some basic validation, then just add it to our list. As long as
-        # we should be fine.
-        if 'filename' in input_obj:
-            self._sources.append(input_obj)
-        else:
-            raise WrongSourceType("Filename required in source object!")
+        # As long as we have a filename we should be fine.
+        if 'filename' not in input_obj:
+            raise WrongInputType("Filename required in input object!")
 
-    def _install(self, source):
+    def install_input(self, input_obj):
+        self.__validate_input(input_obj)
+
         # Remember, our filename is relative to the asset root.
-        filename = source['filename']
-        template = self._jinja2env.get_template(filename)
+        filename = input_obj['filename']
+        template = self.__jinja2env.get_template(filename)
 
-        parameters = source.get('parameters')
-        if 'parameters' in source:
-            rendered_template = template.render(source['parameters'])
+        if 'parameters' in input_obj:
+            rendered_template = template.render(input_obj['parameters'])
         else:
             rendered_template = template.render()
 
-        input_file, output_file = get_input_output_file(self.asset_root,
-                                                        self.dist_root,
-                                                        filename)
-        self.env.file_from_content(input_file, rendered_template, output_file)
-        return output_file
+        in_f, out_f = in_out_file(self.asset_root, self.dist_root,
+                                  filename)
+        self.operations.file_from_content(in_f, rendered_template, out_f)
+        return [out_f]
 
 class ScssContentProvider(StaticContentProvider):
-    def _install(self, source):
-        source_rel = os.path.relpath(source, self.asset_root)
-        input_file, output_file = get_input_output_file(self.asset_root,
-                                                        self.dist_root,
-                                                        source_rel)
-        output_file = os.path.splitext(output_file)[0] + '.css'
+    def install_input(self, input_obj):
+        source_list = self._get_source_list(input_obj)
+        installed_files = []
+        for source in source_list:
+            source_rel = os.path.relpath(source, self.asset_root)
+            in_f, out_f = in_out_file(self.asset_root, self.dist_root,
+                                      source_rel)
+            out_f = os.path.splitext(out_f)[0] + '.css'
 
-        # Check for search paths provided.
-        search_paths = self.options.get('search_paths', [])
-        command_options = []
-        for path in search_paths:
-            command_options.extend(['--load-path',
-                                    os.path.join(self.env.dist_root, path)])
+            # Check for search paths provided.
+            search_paths = self.options.get('search_paths', [])
+            command_options = []
+            for path in search_paths:
+                command_options.extend(['--load-path',
+                                        os.path.join(self.env.dist_root,path)])
 
-        self.env.subprocess_transform('scss', command_options,
-                                      input_file, output_file)
-        return output_file
+            self.operations.subprocess_transform('scss', command_options,
+                                                 in_f, out_f)
+            installed_files.append(os.path.join(self.dist_root, out_f))
+        return installed_files
 
 if __name__ == '__main__':
 
@@ -229,11 +232,9 @@ if __name__ == '__main__':
                              asset['type'] + ' assets.\n')
             continue
 
-        # Tell the provider about it's input.
+        # Tell the provider to install each input.
         for i in asset['input']:
-            provider.add_input(i)
-        # Install everything while recording what files were produced.
-        output.extend(provider.install_content())
+            output.extend(provider.install_input(i))
 
     for dirname, dirs, files in os.walk(env.dist_root, topdown=False):
         for f in files:
