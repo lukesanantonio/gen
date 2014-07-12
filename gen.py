@@ -24,6 +24,18 @@ def is_newer(i_file, o_file):
         return True
     return False
 
+def find_asset_object(assets, directory):
+    directory = os.path.normpath(directory)
+    # Go as long as we don't repeat ourselves.
+    while directory != os.path.dirname(directory):
+        for cur_asset in assets:
+            if cur_asset['root'] == directory:
+                return cur_asset
+        # Remove the last component of the directory, effectively pointing to
+        # it's parent.
+        directory = os.path.dirname(directory)
+    return None
+
 # Exceptions
 class AssetRootNotFound(Exception):
     pass
