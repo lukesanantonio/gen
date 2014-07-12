@@ -16,6 +16,9 @@ import imp
 def get_input_output_file(asset_root, dist_root, f):
     return os.path.join(asset_root, f), os.path.join(dist_root, f)
 
+# Exceptions
+class AssetRootNotFound(Exception):
+    pass
 class WrongSourceType(Exception):
     pass
 
@@ -72,6 +75,8 @@ class BaseContentProvider:
         # Don't rely on the cwd directory staying as it throughout the
         # lifetime of the object. That is, make absolute paths now.
         self.asset_root = os.path.abspath(asset_root)
+        if not os.path.exists(self.asset_root):
+            raise AssetRootNotFound
         self.dist_root = os.path.abspath(dist_root)
         self.options = type_options
         self.env = env
@@ -204,8 +209,13 @@ if __name__ == '__main__':
         # Find our class!
         provider_class = transformations.get(asset['type'])
         if provider_class:
-            provider = provider_class(asset['root'], asset_dist,
-                                      asset.get('type_options', {}), env)
+            try:
+                provider = provider_class(asset['root'], asset_dist,
+                                          asset.get('type_options', {}), env)
+            except AssetRootNotFound:
+                sys.stderr.write("Asset root '" + asset['root']  +
+                                 "' not found.\n")
+                continue
         else:
             sys.stderr.write('No plugin available to handle ' +
                              asset['type'] + ' assets.\n')
