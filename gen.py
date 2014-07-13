@@ -10,10 +10,12 @@ import shutil
 import json
 import subprocess
 import jinja2
+import jinja2.meta
 import sys
 import imp
 import argparse
 import logging
+import copy
 
 # Helper functions
 def in_out_file(asset_root, dist_root, f):
@@ -94,41 +96,31 @@ class Operations:
         self.out = out or Output()
 
     def copy(self, input_file, output_file):
-        if is_newer(input_file, output_file):
-            # Make sure the destination directory exists.
-            os.makedirs(os.path.dirname(output_file), exist_ok=True)
-            # Copy the file
-            shutil.copy(input_file, output_file)
-            shutil.copystat(input_file, output_file)
-            # Notify the environment
-            self.out.on_transform(input_file, output_file)
-        else:
-            # Notify the environment we are skipping this file.
-            self.out.on_skip(output_file)
+        # Make sure the destination directory exists.
+        os.makedirs(os.path.dirname(output_file), exist_ok=True)
+        # Copy the file
+        shutil.copy(input_file, output_file)
+        shutil.copystat(input_file, output_file)
+        # Notify the environment
+        self.out.on_transform(input_file, output_file)
 
     def file_from_content(self, input_file, content, output_file):
-        if is_newer(input_file, output_file):
-            os.makedirs(os.path.dirname(output_file), exist_ok=True)
-            with open(output_file, "w") as f:
-                f.write(content)
-            shutil.copystat(input_file, output_file)
-            self.out.on_transform(input_file, output_file)
-        else:
-            self.out.on_skip(output_file)
+        os.makedirs(os.path.dirname(output_file), exist_ok=True)
+        with open(output_file, "w") as f:
+            f.write(content)
+        shutil.copystat(input_file, output_file)
+        self.out.on_transform(input_file, output_file)
 
     def subprocess_transform(self, prg, options, input_file, output_file):
-        if is_newer(input_file, output_file):
-            args = [prg, input_file, output_file]
-            args[1:1] = options
+        args = [prg, input_file, output_file]
+        args[1:1] = options
 
-            os.makedirs(os.path.dirname(output_file), exist_ok=True)
+        os.makedirs(os.path.dirname(output_file), exist_ok=True)
 
-            self.out.on_command(args)
-            if subprocess.call(args):
-                self.out.on_transform(input_file, output_file)
-                shutil.copystat(input_file, output_file)
-        else:
-            self.out.on_skip(output_file)
+        self.out.on_command(args)
+        if subprocess.call(args):
+            self.out.on_transform(input_file, output_file)
+            shutil.copystat(input_file, output_file)
 
 class BaseAsset:
     def __init__(self, root, dist, inputs, ops, options, env):
@@ -156,6 +148,9 @@ class BaseAsset:
         self.env = env
 
     def list_output(self):
+        raise NotImplementedError
+    def get_dependencies(self, fname):
+        """Return a list of files relative to self.root that fname requires."""
         raise NotImplementedError
     def install(self, filename):
         raise NotImplementedError
@@ -191,6 +186,9 @@ class StaticAsset(BaseAsset):
         else:
             return [os.path.relpath(abs_input, self.root)]
 
+    def get_dependencies(self, filename):
+        return [filename]
+
     def list_output(self):
         files = []
         for i in self.inputs:
@@ -213,6 +211,19 @@ class Jinja2Asset(BaseAsset):
             raise InputAttributeError(input_obj, 'filename')
         if not os.path.exists(os.path.join(self.root, f)):
             raise SourceNotFoundError(input_obj, f)
+
+    def get_dependencies(self, filename):
+        depends = [filename]
+
+        source = os.path.join(self.root, filename)
+        ast = jinja2.Environment().parse(open(source).read())
+        template_depends = jinja2.meta.find_referenced_templates(ast)
+        for dependency in template_depends:
+            if dependency:
+                dependency = os.path.join(os.path.dirname(source), dependency)
+                dependency = os.path.normpath(dependency)
+                depends.append(os.path.relpath(dependency, self.root))
+        return depends
 
     def list_output(self):
         output = []
@@ -249,6 +260,8 @@ class Jinja2Asset(BaseAsset):
         self.operations.file_from_content(in_f, rendered_template, out_f)
 
 class ScssAsset(StaticAsset):
+    def get_dependencies(self, filename):
+        return [os.path.splitext(filename)[0] + '.scss']
     def list_output(self):
         output = super().list_output()
         for i in range(len(output)):
@@ -298,6 +311,14 @@ if __name__ == '__main__':
     transformations = {'static': StaticAsset, 'jinja2': Jinja2Asset,
                        'scss': ScssAsset}
 
+    # Load up our cached modification times.
+    try:
+        cache = json.load(open('.gencache.json'))
+    except OSError:
+        cache = {}
+
+    cache_to_write = copy.copy(cache)
+
     output = []
     for asset in assets_json.get('assets', []):
         # Find the asset-specific dist dir.
@@ -320,8 +341,27 @@ if __name__ == '__main__':
                          asset['type'] + "' assets.")
             continue
 
-        for f in provider.install_all():
+        for f in provider.list_output():
+            depends = provider.get_dependencies(f)
+            regeneration_required = False
+            for dependency in depends:
+                dependency_source = os.path.join(asset['root'], dependency)
+                dependency_mtime = os.path.getmtime(dependency_source)
+                # If the dependency has been changed:
+                if cache.get(dependency, 0) < dependency_mtime:
+                    # Update the cache.
+                    cache_to_write[dependency] = dependency_mtime
+                    # Make sure we regenerate the output file later.
+                    regeneration_required = True
+
+            if regeneration_required:
+                provider.install(f)
+            else:
+                out.on_skip(f)
             output.append(os.path.join(asset_dist, f))
+
+    # Write the cache.
+    json.dump(cache_to_write, open('.gencache.json', 'w'))
 
     for dirname, dirs, files in os.walk(env.dist_root, topdown=False):
         for f in files:
