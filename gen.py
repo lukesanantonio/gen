@@ -16,6 +16,7 @@ import imp
 import argparse
 import logging
 import copy
+import time
 
 # Helper functions
 def in_out_file(asset_root, dist_root, f):
@@ -288,6 +289,8 @@ if __name__ == '__main__':
     parser.add_argument('-f', '--assets-file', default=None,
                         help="Specify the assets json file " +
                              "(default ./assets.json).")
+    parser.add_argument('-w', '--watch', action="store_true", default=False,
+                        help="Stay open and watch for file changes.")
     parser.add_argument('-v', '--verbose', action="count", default=0,
                         help="Log files copied to stderr.")
     arguments = parser.parse_args()
@@ -312,70 +315,76 @@ if __name__ == '__main__':
     transformations = {'static': StaticAsset, 'jinja2': Jinja2Asset,
                        'scss': ScssAsset}
 
-    # Load up our cached modification times.
-    try:
-        cache = json.load(open('.gencache.json'))
-    except OSError:
-        cache = {}
+    while True:
+        # Load up our cached modification times.
+        try:
+            cache = json.load(open('.gencache.json'))
+        except OSError:
+            cache = {}
 
-    cache_to_write = copy.copy(cache)
+        cache_to_write = copy.copy(cache)
 
-    output = []
-    for asset in assets_json.get('assets', []):
-        # Find the asset-specific dist dir.
-        asset_dist = os.path.join(env.dist_root,
-                                  asset.get('dist', asset['root']))
-        asset_dist = os.path.normpath(asset_dist)
+        output = []
+        for asset in assets_json.get('assets', []):
+            # Find the asset-specific dist dir.
+            asset_dist = os.path.join(env.dist_root,
+                                      asset.get('dist', asset['root']))
+            asset_dist = os.path.normpath(asset_dist)
 
-        # Find our class!
-        provider_class = transformations.get(asset['type'])
-        if provider_class:
-            try:
-                provider = provider_class(asset['root'], asset_dist,
-                                          asset['input'], Operations(out),
-                                          asset.get('type_options', {}), env)
-            except ValidationError as e:
-                out.on_error(e)
-                continue;
-        else:
-            out.on_error("No plugin available to handle '" +
-                         asset['type'] + "' assets.")
-            continue
-
-        for f in provider.list_output():
-            depends = provider.get_dependencies(f)
-            regeneration_required = False
-            for dependency in depends:
-                dependency_source = os.path.join(asset['root'], dependency)
-                dependency_mtime = os.path.getmtime(dependency_source)
-                # If the dependency has been changed:
-                if cache.get(dependency, 0) < dependency_mtime:
-                    # Update the cache.
-                    cache_to_write[dependency] = dependency_mtime
-                    # Make sure we regenerate the output file later.
-                    regeneration_required = True
-
-            if regeneration_required:
-                provider.install(f)
+            # Find our asset class!
+            asset_type = transformations.get(asset['type'])
+            if asset_type:
+                try:
+                    asset_obj = asset_type
+                    asset_obj = asset_type(asset['root'], asset_dist,
+                                           asset['input'], Operations(out),
+                                           asset.get('type_options', {}), env)
+                except ValidationError as e:
+                    out.on_error(e)
+                    continue
             else:
-                out.on_skip(f)
-            output.append(os.path.join(asset_dist, f))
+                out.on_error("No plugin available to handle '" +
+                             asset['type'] + "' assets.")
+                continue
 
-    # Write the cache.
-    json.dump(cache_to_write, open('.gencache.json', 'w'))
+            for f in asset_obj.list_output():
+                depends = asset_obj.get_dependencies(f)
+                regeneration_required = False
+                for dependency in depends:
+                    dependency_source = os.path.join(asset['root'], dependency)
+                    dependency_mtime = os.path.getmtime(dependency_source)
+                    # If the dependency has been changed:
+                    if cache.get(dependency, 0) < dependency_mtime:
+                        # Update the cache.
+                        cache_to_write[dependency] = dependency_mtime
+                        # Make sure we regenerate the output file later.
+                        regeneration_required = True
 
-    for dirname, dirs, files in os.walk(env.dist_root, topdown=False):
-        for f in files:
-            # Check if the file should be there.
-            f = os.path.join(dirname, f)
-            if f not in output:
-                out.on_remove(os.path.relpath(f), adj='old')
-                os.remove(os.path.join(env.dist_root, f))
+                if regeneration_required:
+                    asset_obj.install(f)
+                else:
+                    out.on_skip(f)
+                output.append(os.path.join(asset_dist, f))
 
-        # Also remove empty children directories.
-        for d in dirs:
-            d = os.path.join(dirname, d)
-            if len(os.listdir(d)) == 0:
-                out.on_remove(os.path.relpath(f), adj='empty',
-                              filetype='directory')
-                os.rmdir(d)
+        # Write the cache.
+        json.dump(cache_to_write, open('.gencache.json', 'w'))
+
+        for dirname, dirs, files in os.walk(env.dist_root, topdown=False):
+            for f in files:
+                # Check if the file should be there.
+                f = os.path.join(dirname, f)
+                if f not in output:
+                    out.on_remove(os.path.relpath(f), adj='old')
+                    os.remove(os.path.join(env.dist_root, f))
+
+            # Also remove empty children directories.
+            for d in dirs:
+                d = os.path.join(dirname, d)
+                if len(os.listdir(d)) == 0:
+                    out.on_remove(os.path.relpath(f), adj='empty',
+                                  filetype='directory')
+                    os.rmdir(d)
+
+        time.sleep(.25)
+        if not arguments.watch:
+            break
