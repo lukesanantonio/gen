@@ -222,7 +222,8 @@ class Jinja2Asset(BaseAsset):
             if dependency:
                 dependency = os.path.join(os.path.dirname(source), dependency)
                 dependency = os.path.normpath(dependency)
-                depends.append(os.path.relpath(dependency, self.root))
+                dependency = os.path.relpath(dependency, self.root)
+                depends.extend(self.get_dependencies(dependency))
         return depends
 
     def list_output(self):
