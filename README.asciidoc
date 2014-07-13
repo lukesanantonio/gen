@@ -179,4 +179,3 @@ plugin object beforehand).
 directory. At the moment, the script is very destructive and removes all files
 that were not installed during that invocation.
 - No plugin support.
-- No dependency management.
